@@ -1,0 +1,71 @@
+---
+title: "accumulated barc"
+author: "Josh Erickson"
+date: "September 30, 2020"
+output: html_document
+---
+
+```{r}
+library(sp)
+library(raster)
+library(rgdal)
+library(sf)
+library(tidyverse)
+```
+
+Creating 10 meter flow accumulation, slopes, and weighted barc flow accumulation.
+
+
+```{r}
+dem10 <- raster("DEM_10MclpUTM1.tif")
+barc <- raster("ca3966012280920200817_20200815_20200919_dnbr_barc256_utm.tif")
+
+#need to reclassify for this to be appropriate
+
+barc <- reclassify(barc, c(-Inf,73,1, 73,113,2,113, 198, 3, 198, 256, 4))
+
+
+writeRaster(barc, "barc.tif", overwrite = TRUE)
+plot(barc)
+```
+
+need to aggregate dem10 to dem20.
+
+```{r}
+dem20 <- aggregate(dem10, 2)
+writeRaster(dem20, "dem20.tif")
+dem20 <- raster("dem20.tif")
+
+dem20mC <- crop(dem20,barc)
+dem20C <- resample(dem20mC, barc, method = "bilinear")
+writeRaster(dem20C, "dem20mC.tif", overwrite = TRUE)
+plot(dem20C)
+```
+
+```{r}
+# Pitremove
+system("mpiexec -n 8 PitRemove dem20mC.tif ")
+```
+
+```{r}
+# DInf flow directions
+system("mpiexec -n 8 DinfFlowdir -ang dem20ang.tif -slp dem20slp.tif -fel dem20mCfel.tif ")
+
+# Dinf contributing area
+system("mpiexec -n 8 AreaDinf -ang dem20ang.tif -sca dem20msca.tif -nc -wg barc.tif")
+# without wg
+system("mpiexec -n 8 AreaDinf -ang dem20mang.tif -sca dem20mscanowg.tif -nc")
+
+
+sca_wg=raster("dem20msca.tif")
+sca <- raster("dem20mscanowg.tif")
+accum_barc <- sca_wg/sca
+
+writeRaster(accum_barc, "accum_barc.tif", overwrite = TRUE)
+plot(log(sca))
+zoom(log(sca))
+
+sca_wg_log <- log(sca_wg)
+writeRaster(sca_wg_log, "sca_wg_log.tif")
+```
+
