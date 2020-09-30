@@ -61,7 +61,7 @@ Now extract barc layer from the polygons.
 
 baer_hydro_polys_9_29 <-baer_ws_polys %>% st_as_sf() %>% select(Name, contains("barc"))
  
-baer_hydro_polys_9_29$barc <- exact_extract(barc_9_24,baer_hydro_polys_9_29,  'sum')
+baer_hydro_polys_9_29$barc <- exact_extract(barc_unburned,baer_hydro_polys_9_29,  'sum')
 
 baer_hydro_polys_9_29$barc_low <- exact_extract(barc_low,baer_hydro_polys_9_29,  'sum')
 
@@ -79,12 +79,19 @@ baer_hydro_polys_9_29 <- baer_hydro_polys_9_29 %>% left_join(baer_flow_stats, by
 
 baer_hydro_polys_9_29 <- baer_hydro_polys_9_29 %>% mutate(drainage_area =  units::set_units(st_area(.), "acres"))
 
-st_write(baer_hydro_polys_9_29, layer = "baer_h20_9_29.shp", driver = "ESRI Shapefile", dsn = getwd(), delete_dsn = TRUE)
+st_write(baer_hydro_polys_9_29, layer = "baer_hydro_9_29.shp", driver = "ESRI Shapefile", dsn = getwd(), delete_dsn = TRUE)
 ```
 
 now write a csv
 ```{r}
+
+
 baer_hydro_polys_9_29_csv <- baer_hydro_polys_9_29 %>% select(Name, contains("barc")) %>% st_drop_geometry()
+
+baer_hydro_polys_9_29_sf <- read_sf("baer_hydro_9_29.shp")
+
+baer_hydro_polys_9_29_csv <- baer_hydro_polys_9_29_sf %>% select(Name, contains("barc"), BSLDEM3, PRECIP, ELEV ) %>% st_drop_geometry()
+
 write_csv(baer_hydro_polys_9_29_csv, "baer_hydro_polys_9_29.csv")
 ```
 
