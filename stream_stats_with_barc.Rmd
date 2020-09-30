@@ -1,0 +1,90 @@
+---
+title: "barc_per_catchment"
+author: "Josh Erickson"
+date: "September 29, 2020"
+output: html_document
+---
+
+```{r}
+
+library(rgdal)
+library(streamstats)
+library(sf)
+library(tidyverse)
+library(geojsonsf)
+library(feather)
+library(exactextractr)
+library(tidyverse)
+```
+
+Downloading Stream Stats data.
+
+```{r}
+
+gps_points_9_29 <- read_delim("D:/documents/BAER/gps_points_9_29.txt", 
+    ";", escape_double = FALSE, col_names = c("Site", "Lat","Lon"), 
+    trim_ws = TRUE)
+
+watersheds <- gps_points_9_29 %>% group_by(Site) %>% 
+  select(Lat, Lon) %>% nest() %>% 
+  mutate(ws = map(data,~delineateWatershed(.$Lon,.$Lat , rcode = "CA", crs = 4326)))
+
+baer_ws_polys <- tibble()
+baer_flow_stats <- tibble()
+
+for (i in 1:nrow(watersheds)) {
+tryCatch({
+baer_ws <- pluck(watersheds$ws) %>% pluck(i)  %>%  
+  writeGeoJSON(., "D:/documents/BAER/California/BAER.geojson") %>%
+  geojson_sf()
+baer_ws$Name <- pluck(watersheds$Site) %>% pluck(i) %>% paste()
+
+baer_ws_polys <- plyr::rbind.fill(baer_ws_polys, baer_ws)
+
+baer_stats <- streamstats::computeChars(workspaceID = watersheds$ws[[i]]$workspaceID, rcode = "CA")
+
+baer_stats <- baer_stats$parameters
+
+baer_stats$Name <- pluck(watersheds$Site) %>% pluck(i) %>% paste()
+
+baer_flow_stats <- plyr::rbind.fill(baer_flow_stats, baer_stats)
+
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+}
+```
+
+
+Now extract barc layer from the polygons.
+
+```{r}
+
+baer_hydro_polys_9_29 <-baer_ws_polys %>% st_as_sf() %>% select(Name, contains("barc"))
+ 
+baer_hydro_polys_9_29$barc <- exact_extract(barc_9_24,baer_hydro_polys_9_29,  'sum')
+
+baer_hydro_polys_9_29$barc_low <- exact_extract(barc_low,baer_hydro_polys_9_29,  'sum')
+
+baer_hydro_polys_9_29$barc_mod <- exact_extract(barc_mod,baer_hydro_polys_9_29,  'sum')
+
+baer_hydro_polys_9_29$barc_high <- exact_extract(barc_high, baer_hydro_polys_9_29,  'sum')
+
+```
+Now add the flowstats data and convert to acres.
+```{r}
+
+baer_flow_stats <- baer_flow_stats %>% select(code, value, Name) %>% pivot_wider(names_from = code)
+
+baer_hydro_polys_9_29 <- baer_hydro_polys_9_29 %>% left_join(baer_flow_stats, by = "Name")
+
+baer_hydro_polys_9_29 <- baer_hydro_polys_9_29 %>% mutate(drainage_area =  units::set_units(st_area(.), "acres"))
+
+st_write(baer_hydro_polys_9_29, layer = "baer_h20_9_29.shp", driver = "ESRI Shapefile", dsn = getwd(), delete_dsn = TRUE)
+```
+
+now write a csv
+```{r}
+baer_hydro_polys_9_29_csv <- baer_hydro_polys_9_29 %>% select(Name, contains("barc")) %>% st_drop_geometry()
+write_csv(baer_hydro_polys_9_29_csv, "baer_hydro_polys_9_29.csv")
+```
+
